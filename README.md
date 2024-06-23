@@ -9,7 +9,7 @@ Basic Arduino Transistor Tester
 - SCL -> A5
 - SDA -> A4
 
-### Pins (for connect Transistor for test it)
+### Pins (for connect Transistor to test it)
 - FirstPin --> A0
 - SecondPin -> A1
 - ThirdPin --> A2
