@@ -2,230 +2,186 @@
 #include <Adafruit_GFX.h>
 #include <Adafruit_SSD1306.h>
 
-#define SCREEN_WIDTH   128
-#define SCREEN_HEIGHT  64
-#define OLED_RESET     -1
+#define SCREEN_WIDTH 128 // Šírka OLED displeja v pixeloch
+#define SCREEN_HEIGHT 64 // Výška OLED displeja v pixeloch
+#define OLED_RESET    -1 // Resetný pin (nie je použitý, -1 ak nie je použitý)
 Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, OLED_RESET);
 
-// Testovací tlačidlo
-const int START_BUTTON_PIN = 2;  // digitálny pin s tlačidlom (pripojený k GND pri stlačení)
+const int pin1 = A0; // Prvý pin pre meranie
+const int pin2 = A1; // Druhý pin pre meranie
+const int pin3 = A2; // Tretí pin pre meranie
+const int buttonPin = 2; // Tlačidlo na spustenie detekcie
 
-// Testovacie piny pre komponenty
-const int PINS[3] = { A0, A1, A2 };
-
-// Parametre pre meranie odporu v deličovom zapojení
-const float VIN       = 5.0;
-const float KNOWN_R   = 10000.0;  // 10 kΩ
+int lastButtonState = LOW; // Posledný stav tlačidla
+int buttonState = LOW; // Aktuálny stav tlačidla
+unsigned long lastDebounceTime = 0; // Čas poslednej debouncovej kontroly
+unsigned long debounceDelay = 50; // Čas pre debounce
 
 void setup() {
-  Serial.begin(115200);
+  Serial.begin(9600);
 
-  // Inicializácia OLED displeja
+  // Inicializácia displeja
   if (!display.begin(SSD1306_SWITCHCAPVCC, 0x3C)) {
-    Serial.println(F("SSD1306 init failed"));
-    for (;;);
+    Serial.println(F("SSD1306 allocation failed"));
+    for(;;);
   }
-
-  // Nastavenie tlačidla s interným pull-up odporom
-  pinMode(START_BUTTON_PIN, INPUT_PULLUP);
-
+  display.display();
+  delay(2000); // Pauza pre zobrazenie displeja
   display.clearDisplay();
+
+  // Nastavíme tlačidlo ako vstup
+  pinMode(buttonPin, INPUT);
+
   display.setTextColor(SSD1306_WHITE);
   display.setTextSize(1);
   display.setCursor(0, 0);
-  display.println("Smart Tester Ready");
-  display.setCursor(0, 20);
   display.println("Press Start Button");
   display.display();
 }
 
 void loop() {
-  // Čakáme na stlačenie tlačidla
-  if ( waitForStart() ) {
-    display.clearDisplay();
-    // Spustíme testovanie komponentu
-    if      (detectDiode())      { /* výpis interný */ }
-    else if (detectResistor())   { /* výpis interný */ }
-    else if (detectTransistor()) { /* výpis interný */ }
-    else if (detectMOSFET())     { /* výpis interný */ }
-    else {
-      display.setCursor(0,20);
-      display.println("No Component");
-      display.display();
-    }
-    delay(5000);
-    // Po teste vrátime prompt
-    display.clearDisplay();
-    display.setCursor(0,0);
-    display.println("Smart Tester Ready");
-    display.setCursor(0,20);
-    display.println("Press Start Button");
-    display.display();
+  // Sledovanie stavu tlačidla s debounce
+  int reading = digitalRead(buttonPin);
+  if (reading != lastButtonState) {
+    lastDebounceTime = millis();
   }
-}
 
-// Čaká na stlačenie tlačidla s debouncingom
-bool waitForStart() {
-  while (true) {
-    // tlačidlo stlačené = LOW
-    if (digitalRead(START_BUTTON_PIN) == LOW) {
-      delay(50); // debouncing
-      if (digitalRead(START_BUTTON_PIN) == LOW) {
-        // počkáme na uvoľnenie
-        while (digitalRead(START_BUTTON_PIN) == LOW) ;
-        delay(50);
-        return true;
+  if ((millis() - lastDebounceTime) > debounceDelay) {
+    if (reading != buttonState) {
+      buttonState = reading;
+      if (buttonState == HIGH) { // Ak je tlačidlo stlačené, spustí sa detekcia
+        startDetection();
       }
     }
   }
+
+  lastButtonState = reading;
 }
 
-// --------------------------------------------------
-// DETEKCIA DIÓDY
-// --------------------------------------------------
-bool detectDiode() {
-  for (int i = 0; i < 3; i++) {
-    int anodePin   = PINS[i];
-    int cathodePin = PINS[(i + 1) % 3];
-
-    pinMode(anodePin, OUTPUT);
-    digitalWrite(anodePin, HIGH);
-    delay(10);
-    pinMode(cathodePin, INPUT);
-    int vCath = analogRead(cathodePin);
-    pinMode(anodePin, INPUT);
-
-    if (vCath > 700) {
-      display.clearDisplay();
-      display.setCursor(0,10);
-      display.println("Diode Detected");
-      display.setCursor(0,30);
-      display.print("A: A"); display.println(anodePin - A0);
-      display.setCursor(0,40);
-      display.print("K: A"); display.println(cathodePin - A0);
-      display.display();
-      return true;
-    }
-  }
-  return false;
-}
-
-// --------------------------------------------------
-// DETEKCIA REZISTORA
-// --------------------------------------------------
-bool detectResistor() {
-  for (int i = 0; i < 3; i++) {
-    int pin = PINS[i];
-    pinMode(pin, INPUT);
-    int raw = analogRead(pin);
-    float Vout = raw * (VIN / 1023.0);
-    if (Vout < 0.01 || Vout > VIN - 0.01) continue;
-    float Rx = (Vout * KNOWN_R) / (VIN - Vout);
-    if (Rx > 1.0 && Rx < 1e6) {
-      display.clearDisplay();
-      display.setCursor(0,10);
-      display.println("Resistor Detected");
-      display.setCursor(0,30);
-      display.print("Pin: A"); display.println(pin - A0);
-      display.setCursor(0,40);
-      display.print("Value: "); display.print(Rx,1); display.println(" Ohm");
-      display.display();
-      return true;
-    }
-  }
-  return false;
-}
-
-// --------------------------------------------------
-// DETEKCIA TRANZISTORA
-// --------------------------------------------------
-bool detectTransistor() {
-  int vcol, vem;
-  for (int b = 0; b < 3; b++) {
-    int base = PINS[b];
-    int col  = PINS[(b + 1) % 3];
-    int em   = PINS[(b + 2) % 3];
-
-    pinMode(base, OUTPUT);
-    digitalWrite(base, HIGH);
-    delay(10);
-    vcol = analogRead(col);
-    vem  = analogRead(em);
-    pinMode(base, INPUT);
-
-    if (vcol > 700 && vem < 300) {
-      printTransistor("NPN", base, col, em);
-      return true;
-    }
-    if (vcol < 300 && vem > 700) {
-      printTransistor("PNP", base, em, col);
-      return true;
-    }
-  }
-  return false;
-}
-
-void printTransistor(const char* type, int b, int c, int e) {
+void startDetection() {
   display.clearDisplay();
-  display.setCursor(0,10);
-  display.print(type); display.println(" Transistor");
-  display.setCursor(0,30);
-  display.print("B: A"); display.println(b - A0);
-  display.setCursor(0,40);
-  display.print("C: A"); display.println(c - A0);
-  display.setCursor(0,50);
-  display.print("E: A"); display.println(e - A0);
+  display.setCursor(0, 0);
+  display.println("Testing...");
+
+  // Meranie diódy
+  testDiode();
+
+  // Meranie rezistora
+  testResistor();
+
+  // Meranie tranzistora
+  testTransistor();
+
+  // Meranie MOSFETu
+  testMOSFET();
+
+  display.display();
+  delay(5000); // Zobraziť výsledok na 5 sekúnd
+  display.clearDisplay();
+  display.setCursor(0, 0);
+  display.println("Press Start Button");
   display.display();
 }
 
-// --------------------------------------------------
-// DETEKCIA MOSFETU
-// --------------------------------------------------
-bool detectMOSFET() {
-  int v1, v2;
-  for (int i = 0; i < 3; i++) {
-    int gate  = PINS[i];
-    int drain = PINS[(i + 1) % 3];
-    int src   = PINS[(i + 2) % 3];
-
-    // Test N-kanál: Gate HIGH
-    pinMode(gate, OUTPUT);
-    digitalWrite(gate, HIGH);
-    delay(10);
-    pinMode(drain, INPUT);
-    pinMode(src, INPUT);
-    v1 = analogRead(drain);
-    v2 = analogRead(src);
-    pinMode(gate, INPUT);
-    if (v1 > 700 && v2 < 300) {
-      printMOSFET("N-Channel", gate, drain, src);
-      return true;
-    }
-
-    // Test P-kanál: Gate LOW
-    pinMode(gate, OUTPUT);
-    digitalWrite(gate, LOW);
-    delay(10);
-    v1 = analogRead(src);
-    v2 = analogRead(drain);
-    pinMode(gate, INPUT);
-    if (v1 > 700 && v2 < 300) {
-      printMOSFET("P-Channel", gate, src, drain);
-      return true;
-    }
+void testDiode() {
+  int p1 = analogRead(pin1);
+  int p2 = analogRead(pin2);
+  
+  display.setCursor(0, 10);
+  if (p1 > 500 && p2 < 500) {
+    display.println("Diode: Anode->Pin1, Cathode->Pin2");
+  } else if (p1 < 500 && p2 > 500) {
+    display.println("Diode: Anode->Pin2, Cathode->Pin1");
+  } else {
+    display.println("No Diode detected");
   }
-  return false;
 }
 
-void printMOSFET(const char* type, int g, int d, int s) {
-  display.clearDisplay();
-  display.setCursor(0,10);
-  display.print(type); display.println(" MOSFET");
-  display.setCursor(0,30);
-  display.print("G: A"); display.println(g - A0);
-  display.setCursor(0,40);
-  display.print("D: A"); display.println(d - A0);
-  display.setCursor(0,50);
-  display.print("S: A"); display.println(s - A0);
-  display.display();
+void testResistor() {
+  int p1 = analogRead(pin1);
+  int p2 = analogRead(pin2);
+
+  // Výpočet odporu na základe napätia (kalkulácia v ohmoch)
+  float resistance = (1023.0 / (float)(p1 - p2)) * 1000.0; // Jednoduchý výpočet
+  display.setCursor(0, 20);
+  display.print("Resistor: ");
+  display.print(resistance);
+  display.println(" Ohms");
+}
+
+void testTransistor() {
+  int p1, p2, p3;
+  
+  // Nastav p1 ako bázu, skontroluj p2 a p3 ako kolektor/emitor
+  pinMode(pin1, OUTPUT);
+  digitalWrite(pin1, HIGH);
+  delay(10);
+  p2 = analogRead(pin2);
+  p3 = analogRead(pin3);
+
+  if (p2 > 500 && p3 < 500) {
+    printResult("NPN", pin1, pin2, pin3);
+  } else if (p2 < 500 && p3 > 500) {
+    printResult("PNP", pin1, pin3, pin2);
+  } else {
+    pinMode(pin2, OUTPUT);
+    digitalWrite(pin2, HIGH);
+    delay(10);
+    p1 = analogRead(pin1);
+    p3 = analogRead(pin3);
+
+    if (p1 > 500 && p3 < 500) {
+      printResult("NPN", pin2, pin1, pin3);
+    } else if (p1 < 500 && p3 > 500) {
+      printResult("PNP", pin2, pin3, pin1);
+    } else {
+      display.setCursor(0, 30);
+      display.println("No Transistor");
+    }
+  }
+
+  pinMode(pin1, INPUT);
+  pinMode(pin2, INPUT);
+  pinMode(pin3, INPUT);
+}
+
+void testMOSFET() {
+  int p1, p2, p3;
+
+  pinMode(pin1, OUTPUT);
+  pinMode(pin2, INPUT);
+  pinMode(pin3, INPUT);
+
+  digitalWrite(pin1, HIGH);
+  delay(10);
+
+  p1 = analogRead(pin1);
+  p2 = analogRead(pin2);
+  p3 = analogRead(pin3);
+
+  if (p2 > 500) {
+    display.setCursor(0, 40);
+    display.println("MOSFET: Source -> Pin3, Drain -> Pin2");
+  } else {
+    display.setCursor(0, 40);
+    display.println("No MOSFET detected");
+  }
+}
+
+void printResult(String type, int base, int collector, int emitter) {
+  display.setCursor(0, 50);
+  display.print(type);
+  display.println(" Transistor");
+
+  display.setCursor(0, 60);
+  display.print("Base: A");
+  display.println(base - A0);
+
+  display.setCursor(0, 70);
+  display.print("Collector: A");
+  display.println(collector - A0);
+
+  display.setCursor(0, 80);
+  display.print("Emitter: A");
+  display.println(emitter - A0);
 }
