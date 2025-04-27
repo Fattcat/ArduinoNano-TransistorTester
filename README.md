@@ -13,3 +13,9 @@ Basic Arduino Transistor Tester
 - FirstPin --> A0
 - SecondPin -> A1
 - ThirdPin --> A2
+
+## Added support for autodetect components
+  - Transistors
+    - NPN, PNP, MOSFET
+  - Resistors
+  - Diodes
