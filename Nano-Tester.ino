@@ -101,12 +101,18 @@ void testResistor() {
   int p1 = analogRead(pin1);
   int p2 = analogRead(pin2);
 
-  // Výpočet odporu na základe napätia (kalkulácia v ohmoch)
-  float resistance = (1023.0 / (float)(p1 - p2)) * 1000.0; // Jednoduchý výpočet
-  display.setCursor(0, 20);
-  display.print("Resistor: ");
-  display.print(resistance);
-  display.println(" Ohms");
+  // Zistíme, či máme rezistor
+  if (p1 != p2) {  // Ak hodnoty z pinu nie sú rovnaké, môžeme predpokladať, že ide o rezistor
+    // Výpočet odporu na základe napätia
+    float resistance = (1023.0 / (float)(p1 - p2)) * 1000.0; // Jednoduchý výpočet
+    display.setCursor(0, 20);
+    display.print("Resistor: ");
+    display.print(resistance);
+    display.println(" Ohms");
+  } else {
+    display.setCursor(0, 20);
+    display.println("No Resistor detected");
+  }
 }
 
 void testTransistor() {
